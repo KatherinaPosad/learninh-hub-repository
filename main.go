@@ -11,6 +11,7 @@ import (
 )
 
 func main() {
+	fmt.Println("Server start!")
 
 	ctx := context.Background()
 
