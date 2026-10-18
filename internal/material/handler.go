@@ -1,8 +1,9 @@
 package material
 
 import (
-	"encoding/json"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
@@ -15,49 +16,27 @@ func NewHandler(service *Service) *Handler {
 	}
 }
 
-func (h *Handler) GetMaterials(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		ctx := r.Context()
-
-		materials, err := h.service.GetMaterials(ctx)
-		if err != nil {
-			http.Error(w, "Failed to get materials", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-
-		json.NewEncoder(w).Encode(materials)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-
+func (h *Handler) GetMaterials(c *gin.Context) {
+	materials, err := h.service.GetMaterials(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get materials"})
+		return
 	}
+	c.JSON(http.StatusOK, materials)
 }
 
-func (h *Handler) CreateMaterial(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		var material Material
-		ctx := r.Context()
+func (h *Handler) CreateMaterial(c *gin.Context) {
+	var material Material
 
-		err := json.NewDecoder(r.Body).Decode(&material)
-		if err != nil {
-			http.Error(w, "Bad request", http.StatusBadRequest)
-			return
-		}
-		err = h.service.CreateMaterial(ctx, &material)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-
-		json.NewEncoder(w).Encode(&material)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if err := c.ShouldBindJSON(&material); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Bad request"})
+		return
 	}
+	if err := h.service.CreateMaterial(c.Request.Context(), &material); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Bad request"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, material)
 
 }

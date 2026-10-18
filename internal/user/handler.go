@@ -1,8 +1,10 @@
 package user
 
 import (
-	"encoding/json"
+	"errors"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
@@ -15,55 +17,62 @@ func NewHandler(service *Service) *Handler {
 	}
 }
 
-func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		var request RegisterRequest
-		ctx := r.Context()
+func (h *Handler) Register(c *gin.Context) {
+	var request RegisterRequest
 
-		err := json.NewDecoder(r.Body).Decode(&request)
-		if err != nil {
-			http.Error(w, "Bad Request", http.StatusBadRequest)
-			return
-		}
-
-		response, err := h.service.Register(ctx, request)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-type", "application/json")
-		json.NewEncoder(w).Encode(response)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	err := c.ShouldBindJSON(&request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
 	}
+
+	response, err := h.service.Register(c.Request.Context(), request)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrLoginOrEmailRequired),
+			errors.Is(err, ErrInvalidEmail),
+			errors.Is(err, ErrPasswordRequired):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
+		case errors.Is(err, ErrInvalidCredentials):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		}
+
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
 
 }
 
-func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		var request LoginRequest
-		ctx := r.Context()
+func (h *Handler) Login(c *gin.Context) {
+	var request LoginRequest
 
-		err := json.NewDecoder(r.Body).Decode(&request)
-		if err != nil {
-			http.Error(w, "Bad request", http.StatusBadRequest)
-			return
-		}
-
-		loginResponse, err := h.service.Login(ctx, request)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
-
-		w.Header().Set("Content-type", "application/json")
-		json.NewEncoder(w).Encode(loginResponse)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	err := c.ShouldBindJSON(&request)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
 	}
+
+	loginResponse, err := h.service.Login(c.Request.Context(), request)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrLoginOrEmailRequired),
+			errors.Is(err, ErrPasswordRequired):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
+		case errors.Is(err, ErrInvalidCredentials):
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, loginResponse)
+
 }

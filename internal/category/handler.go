@@ -1,8 +1,9 @@
 package category
 
 import (
-	"encoding/json"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
@@ -15,50 +16,28 @@ func NewHandler(service *Service) *Handler {
 	}
 }
 
-func (h *Handler) GetCategories(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		ctx := r.Context()
-
-		categories, err := h.service.GetCategories(ctx)
-		if err != nil {
-			http.Error(w, "Failed to get categories", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		json.NewEncoder(w).Encode(categories)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+func (h *Handler) GetCategories(c *gin.Context) {
+	categories, err := h.service.GetCategories(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get categories"})
+		return
 	}
+
+	c.JSON(http.StatusOK, categories)
 }
 
-func (h *Handler) CreateCategory(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		var category Category
-		ctx := r.Context()
+func (h *Handler) CreateCategory(c *gin.Context) {
+	var category Category
 
-		err := json.NewDecoder(r.Body).Decode(&category)
-		if err != nil {
-			http.Error(w, "Bad request", http.StatusBadRequest)
-			return
-		}
-
-		err = h.service.CreateCategory(ctx, &category)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-
-		json.NewEncoder(w).Encode(&category)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if err := c.ShouldBindJSON(&category); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Bad request"})
+		return
 	}
+
+	if err := h.service.CreateCategory(c.Request.Context(), &category); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Bad request"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, category)
 }

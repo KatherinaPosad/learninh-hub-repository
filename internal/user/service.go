@@ -2,7 +2,7 @@ package user
 
 import (
 	"context"
-	"errors"
+	"learning-hub/auth"
 	"net/mail"
 
 	"golang.org/x/crypto/bcrypt"
@@ -10,25 +10,27 @@ import (
 
 type Service struct {
 	repository *Repository
+	jwtSecret  string
 }
 
-func NewService(repository *Repository) *Service {
+func NewService(repository *Repository, secret string) *Service {
 	return &Service{
 		repository: repository,
+		jwtSecret:  secret,
 	}
 }
 
 func validateEmail(email string) error {
 	_, err := mail.ParseAddress(email)
 	if err != nil {
-		return errors.New("invalid email")
+		return ErrInvalidEmail
 	}
 	return nil
 }
 
 func (s *Service) Register(ctx context.Context, request RegisterRequest) (UserResponse, error) {
 	if request.Login == "" && request.Email == "" {
-		return UserResponse{}, errors.New("Login or must be provided")
+		return UserResponse{}, ErrLoginOrEmailRequired
 	}
 
 	if request.Email != "" {
@@ -39,7 +41,7 @@ func (s *Service) Register(ctx context.Context, request RegisterRequest) (UserRe
 	}
 
 	if request.Password == "" {
-		return UserResponse{}, errors.New("Password must be not empty")
+		return UserResponse{}, ErrPasswordRequired
 	}
 
 	hashPassword, err := bcrypt.GenerateFromPassword(
@@ -74,21 +76,22 @@ func (s *Service) Register(ctx context.Context, request RegisterRequest) (UserRe
 	return response, nil
 }
 
-func (s *Service) Login(ctx context.Context, request LoginRequest) (User, error) {
-	var user User
-	var err error
+func (s *Service) Login(ctx context.Context, request LoginRequest) (LoginResponse, error) {
 
 	if request.Login == "" && request.Email == "" { //нельзя указать ничего
-		return User{}, errors.New("Login and Email must be provided")
+		return LoginResponse{}, ErrLoginOrEmailRequired
 	}
 
 	if request.Login != "" && request.Email != "" { // нельзя указать оба
-		return User{}, errors.New("provide login or email")
+		return LoginResponse{}, ErrLoginOrEmailRequired
 	}
 
 	if request.Password == "" {
-		return User{}, errors.New("Password must be not empty")
+		return LoginResponse{}, ErrPasswordRequired
 	}
+
+	var user User
+	var err error
 
 	if request.Login != "" {
 		user, err = s.repository.GetUserByLogin(ctx, request.Login)
@@ -97,10 +100,7 @@ func (s *Service) Login(ctx context.Context, request LoginRequest) (User, error)
 	}
 
 	if err != nil {
-		if request.Login != "" {
-			return User{}, errors.New("invalid login or password")
-		}
-		return User{}, errors.New("invalid email or password")
+		return LoginResponse{}, ErrInvalidCredentials
 	}
 
 	err = bcrypt.CompareHashAndPassword(
@@ -109,11 +109,28 @@ func (s *Service) Login(ctx context.Context, request LoginRequest) (User, error)
 	)
 
 	if err != nil {
-		if request.Login != "" {
-			return User{}, errors.New("invalid login or password")
-		}
-		return User{}, errors.New("invalid email or password")
+		return LoginResponse{}, ErrInvalidCredentials
 	}
 
-	return user, nil
+	roles := []string{user.Role}
+
+	token, err := auth.GenerateJWT(user.ID, roles, s.jwtSecret)
+	if err != nil {
+		return LoginResponse{}, err
+	}
+
+	userResponse := UserResponse{
+		ID:    user.ID,
+		Login: user.Login,
+		Name:  user.Name,
+		Email: user.Email,
+		Role:  user.Role,
+	}
+
+	response := LoginResponse{
+		User:  userResponse,
+		Token: token,
+	}
+
+	return response, nil
 }

@@ -35,3 +35,8 @@ type LoginRequest struct { // что клиенту присылает серв�
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
+
+type LoginResponse struct {
+	User  UserResponse `json:"user"`
+	Token string       `json:"token"`
+}

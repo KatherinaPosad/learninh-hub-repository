@@ -1,8 +1,9 @@
 package reviews
 
 import (
-	"encoding/json"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
@@ -15,72 +16,52 @@ func NewHandler(service *Service) *Handler {
 	}
 }
 
-func (h *Handler) GetReviews(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		ctx := r.Context()
-		reviews, err := h.service.GetReviews(ctx)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-
-		json.NewEncoder(w).Encode(reviews)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+func (h *Handler) GetReviews(c *gin.Context) {
+	reviews, err := h.service.GetReviews(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get reviews"})
+		return
 	}
+
+	c.JSON(http.StatusOK, reviews)
 }
 
-func (h *Handler) CreateReview(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		var review Review
+func (h *Handler) CreateReview(c *gin.Context) {
 
-		err := json.NewDecoder(r.Body).Decode(&review)
-		if err != nil {
-			http.Error(w, "Bad request", http.StatusBadRequest)
-			return
-		}
-		ctx := r.Context()
+	var review Review
 
-		err = h.service.CreateReview(ctx, &review)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-
-		json.NewEncoder(w).Encode(&review)
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	err := c.ShouldBindJSON(&review)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Bad request"})
+		return
 	}
+
+	if err = h.service.CreateReview(c.Request.Context(), &review); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Bad request"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, review)
+
 }
 
-func (h *Handler) DeleteReview(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodDelete:
-		var review Review
-		ctx := r.Context()
+func (h *Handler) DeleteReview(c *gin.Context) {
+	var review Review
 
-		err := json.NewDecoder(r.Body).Decode(&review)
-		if err != nil {
-			http.Error(w, "Bad request", http.StatusBadRequest)
-			return
-		}
-
-		rowsAffected, err := h.service.DeleteReview(ctx, review)
-		if err != nil {
-			http.Error(w, "failed to delete review", http.StatusInternalServerError)
-			return
-		}
-		if rowsAffected == 0 {
-			http.Error(w, "Review not found", http.StatusNotFound)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
+	if err := c.ShouldBindJSON(&review); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Bad request"})
+		return
 	}
+
+	rowsAffected, err := h.service.DeleteReview(c.Request.Context(), review)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete review"})
+		return
+	}
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Review not found"})
+		return
+	}
+	c.JSON(http.StatusNoContent, review)
 }
